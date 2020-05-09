@@ -1,0 +1,276 @@
+---
+title: "ML and AI 2"
+author: "Shubhang Periwal 19201104"
+date: "3/29/2020"
+output:
+  pdf_document: default
+  word_document: default
+---
+
+```{r}
+library(keras)
+tensorflow::tf$random$set_seed(0)
+load("D:/data_usps_digits.RData")
+```
+
+
+
+```{r}
+# helper function
+# to plot the digit
+plot_digit <- function(index, data) {
+tmp <- (-data + 1) / 2 # to convert back to original
+z <- matrix( data = as.numeric(data[index, 256:1]), 16, 16 )
+image(z[16:1,1:16], col = gray((1:100)/100),
+xaxt = "n", yaxt = "n")
+}
+
+# plot few example digits
+par(mfrow = c(1,2), mar = rep(1.5, 4))
+plot_digit(14, x_train)
+plot_digit(900, x_train)
+
+```
+
+
+
+```{r}
+#preprocessing
+# Convert y to categorical using one-hot encoding
+y_train <- to_categorical(y_train, num_classes = 10)
+y_test <- to_categorical(y_test , num_classes = 10)
+# convert x_train and x_test from data frame to matrix for valid network input
+x_train <- as.matrix(x_train)
+x_test <- as.matrix(x_test)
+
+# normalizen x(input) to 0-1
+range_norm <- function(x, a = 0, b = 1) {
+( (x - min(x)) / (max(x) - min(x)) )*(b - a) + a }
+
+x_train <- apply(x_train, 2, range_norm)
+x_test <- apply(x_test, 2, range_norm)
+range(x_train)
+range(x_test)
+```
+
+```{r}
+V <- ncol(x_train) # 256
+model_2h <- keras_model_sequential() %>%
+layer_dense(units = 256, activation = "relu", input_shape = V,) %>%#input layer
+  #hidden layer 1
+layer_dense(units = 64, activation = "relu") %>%
+  #hidden layer 2
+layer_dense(units = 10, activation = "softmax") %>%
+  #output layer
+compile(
+loss = "categorical_crossentropy", metrics = "accuracy",
+optimizer = optimizer_sgd(),
+)
+# count parameters
+count_params(model_2h)
+```
+
+
+```{r}
+# fit the model on the training data
+# and evaluate on test data at each epoch
+fit <- model_2h %>% fit(
+x = x_train, y = y_train,
+validation_data = list(x_test, y_test),
+epochs = 100,
+verbose = 0
+)
+```
+
+```{r, echo=FALSE}
+# to add a smooth line to points
+smooth_line <- function(y) {
+x <- 1:length(y)
+out <- predict( loess(y ~ x) )
+return(out)
+}
+# some colors will be used later
+cols <- c("black", "dodgerblue3", "gray50", "deepskyblue2")
+# check performance ---> error
+out <- 1 - cbind(fit$metrics$accuracy,
+fit$metrics$val_accuracy)
+matplot(out, pch = 19, ylab = "Error", xlab = "Epochs",
+col = adjustcolor(cols[1:2], 0.3),
+log = "y") # on log scale to visualize better differences
+matlines(apply(out, 2, smooth_line), lty = 1, col = cols[1:2], lwd = 2)
+legend("topright", legend = c("Training", "Test"),
+fill = cols[1:2], bty = "n")
+
+```
+
+
+```{r, echo=FALSE}
+# regularized model
+model_2hreg <- keras_model_sequential() %>%
+layer_dense(units = 256, activation = "relu", input_shape = V,
+kernel_regularizer = regularizer_l2(l = 0.001)) %>%#hidden layer 1
+layer_dense(units = 64, activation = "relu",#hidden layer 2
+kernel_regularizer = regularizer_l2(l = 0.001)) %>%
+layer_dense(units = 10, activation = "softmax") %>%
+compile(
+loss = "categorical_crossentropy",
+optimizer = optimizer_sgd(),
+metrics = "accuracy"
+)
+
+# count parameters
+count_params(model_2hreg)
+```
+
+
+```{r, echo=FALSE}
+# train and evaluate on test data at each epoch
+fit_reg <- model_2hreg %>% fit(
+x = x_train, y = y_train,
+validation_data = list(x_test, y_test),
+epochs = 100,
+verbose = 1
+)
+```
+We compare the performance of the regularized model against the performance of the unregularized one.
+```{r}
+
+out <- 1 - cbind(fit$metrics$accuracy,
+fit$metrics$val_accuracy,
+fit_reg$metrics$accuracy,
+fit_reg$metrics$val_accuracy)
+# check performance
+matplot(out, pch = 19, ylab = "Error", xlab = "Epochs",
+col = adjustcolor(cols, 0.3),
+log = "y")
+
+matlines(apply(out, 2, smooth_line), lty = 1, col = cols, lwd = 2)
+legend("topright", legend = c("Training", "Test", "Train_reg", "Test_reg"),
+fill = cols, bty = "n")
+
+```
+
+
+```{r}
+apply(out, 2, min)
+```
+
+```{r, echo=FALSE}
+# get all weights
+w_all <- get_weights(model_2h)
+w_all_reg <- get_weights(model_2hreg)
+# weights of first hidden layer
+# one input --> 64 units
+w <- w_all[[3]][1,]
+w_reg <- w_all_reg[[3]][1,]
+# compare visually the magnitudes
+par(mfrow = c(2,1), mar = c(2,2,0.5,0.5))
+r <- range(w)
+n <- length(w)
+plot(w, ylim = r, pch = 19, col = adjustcolor(1, 0.5))
+abline(h = 0, lty = 2, col = "red")
+segments(1:n, 0, 1:n, w)
+#
+plot(w_reg, ylim = r, pch = 19, col = adjustcolor(1, 0.5))
+abline(h = 0, lty = 2, col = "red")
+segments(1:n, 0, 1:n, w_reg)
+```
+
+```{r, echo=FALSE}
+model_3h <- keras_model_sequential() %>%
+layer_dense(units = 256, activation = "relu", input_shape = V) %>%#input layer
+  #hidden layer 1
+layer_dense(units = 64, activation = "relu") %>%
+  #hidden layer 2
+  layer_dense(units = 32, activation = "relu") %>%
+  #hidden layer 3
+layer_dense(units = 10, activation = "softmax") %>%
+  #output layer
+compile(
+loss = "categorical_crossentropy", metrics = "accuracy",
+optimizer = optimizer_sgd(),
+)
+# count parameters
+count_params(model_3h)
+# fit the model on the training data
+# and evaluate on test data at each epoch
+fit_3h <- model_3h %>% fit(
+x = x_train, y = y_train,
+validation_data = list(x_test, y_test),
+epochs = 100,
+verbose = 0
+)
+```
+
+
+```{r}
+model_reg_3h <- keras_model_sequential() %>%
+layer_dense(units = 256, activation = "relu", input_shape = V,#hidden layer 1
+kernel_regularizer = regularizer_l2(l = 0.001)) %>%
+layer_dense(units = 64, activation = "relu",#hidden layer 2
+kernel_regularizer = regularizer_l2(l = 0.001)) %>%
+  layer_dense(units = 32, activation = "relu",#hidden layer 3
+kernel_regularizer = regularizer_l2(l = 0.001)) %>%
+layer_dense(units = 10, activation = "softmax") %>%
+compile(
+loss = "categorical_crossentropy",
+optimizer = optimizer_sgd(),
+metrics = "accuracy"
+)
+
+# count parameters
+count_params(model_reg_3h)
+
+# fit the model on the training data
+# and evaluate on test data at each epoch
+fit_3hreg <- model_reg_3h %>% fit(
+x = x_train, y = y_train,
+validation_data = list(x_test, y_test),
+epochs = 100,
+verbose = 0
+)
+```
+
+```{r}
+
+
+out <- 1 - cbind(fit_3h$metrics$accuracy,
+fit_3h$metrics$val_accuracy,
+fit_3hreg$metrics$accuracy,
+fit_3hreg$metrics$val_accuracy)
+# check performance
+matplot(out, pch = 19, ylab = "Error", xlab = "Epochs",
+col = adjustcolor(cols, 0.3),
+log = "y")
+
+matlines(apply(out, 2, smooth_line), lty = 1, col = cols, lwd = 2)
+legend("topright", legend = c("Training", "Test", "Train_reg", "Test_reg"),
+fill = cols, bty = "n")
+
+```
+
+```{r}
+apply(out, 2, min)
+```
+
+
+```{r, echo=FALSE}
+# get all weights
+w_all <- get_weights(model_3h)
+w_all_reg <- get_weights(model_reg_3h)
+# weights of first hidden layer
+# one input --> 64 units
+w <- w_all[[3]][1,]
+w_reg <- w_all_reg[[3]][1,]
+# compare visually the magnitudes
+par(mfrow = c(2,1), mar = c(2,2,0.5,0.5))
+r <- range(w)
+n <- length(w)
+plot(w, ylim = r, pch = 19, col = adjustcolor(1, 0.5))
+abline(h = 0, lty = 2, col = "red")
+segments(1:n, 0, 1:n, w)
+#
+plot(w_reg, ylim = r, pch = 19, col = adjustcolor(1, 0.5))
+abline(h = 0, lty = 2, col = "red")
+segments(1:n, 0, 1:n, w_reg)
+```
